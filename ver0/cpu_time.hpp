@@ -21,6 +21,7 @@
 #ifndef _CPUTIME_HPP
 #define _CPUTIME_HPP
 
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <stdint.h> // portable: uint64_t   MSVC: __int64 
@@ -51,6 +52,9 @@ int gettimeofday(struct timeval* tp, struct timezone* tzp)
     tp->tv_usec = (long)(system_time.wMilliseconds * 1000);
     return 0;
 }
+#else
+#include <sys/time.h>
+#endif
 
 #include <sys/types.h>
 
@@ -64,7 +68,7 @@ private:
     {
       struct timeval tp;
 
-      gettimeofday(&tp,NULL);
+      gettimeofday(&tp, nullptr);
       wctime = (double) tp.tv_sec + (double) tp.tv_usec * 1.e-6;
       return wctime;
     }

@@ -48,10 +48,10 @@ private:
   Particle *particles;
   
   int       _npart;		//number of particles
-  int	    _nsteps;	//number of integration steps
+  int	      _nsteps;	//number of integration steps
   real_type _tstep;		//time step of the simulation
 
-  int	    _sfreq;		//sample frequency
+  int	      _sfreq;		//sample frequency
   
   real_type _kenergy;	//kinetic energy
   
@@ -64,16 +64,16 @@ private:
   void init_mass();
     
   inline void set_npart(const int &N){ _npart = N; }
-  inline int get_npart() const {return _npart; }
+  inline int get_npart() const { return _npart; }
   
   inline void set_tstep(const real_type &dt){ _tstep = dt; }
-  inline real_type get_tstep() const {return _tstep; }
+  inline real_type get_tstep() const { return _tstep; }
   
   inline void set_nsteps(const int &n){ _nsteps = n; }
-  inline int get_nsteps() const {return _nsteps; }
+  inline int get_nsteps() const { return _nsteps; }
   
   inline void set_sfreq(const int &sf){ _sfreq = sf; }
-  inline int get_sfreq() const {return _sfreq; }
+  inline int get_sfreq() const { return _sfreq; }
   
   void print_header();
   

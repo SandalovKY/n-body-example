@@ -25,7 +25,7 @@ GSimulation :: GSimulation()
 {
   std::cout << "===============================" << std::endl;
   std::cout << " Initialize Gravity Simulation" << std::endl;
-  set_npart(16000); 
+  set_npart(10000); 
   set_nsteps(10);
   set_tstep(0.1); 
   set_sfreq(1);
@@ -88,13 +88,101 @@ void GSimulation :: init_mass()
 
   for(int i=0; i<get_npart(); ++i)
   {
-    particles[i].mass = n * unif_d(gen); 
+    particles[i].mass = n * unif_d(gen);
+  }
+}
+
+// prevents explosion in the case the particles are really close to each other
+static const double softeningSquared = 1e-9;
+static const double G = 6.67259e-11;
+
+void count_impulse(Particle* particles, int num_parts, double impulse[])
+{
+  for (int i = 0; i < num_parts; ++i) {
+    // Have to add
+  }
+}
+
+double count_k_energy(Particle* particles, int num_parts)
+{
+  // Have to fix
+  double energy = 0.;
+  for (int i = 0; i < num_parts; ++i) {
+    energy += particles[i].mass * (
+		            particles[i].vel[0] * particles[i].vel[0] +
+                particles[i].vel[1] * particles[i].vel[1] +
+                particles[i].vel[2] * particles[i].vel[2]); //7flops
+  }
+  return energy;
+}
+
+double count_p_energy(Particle* particles, int num_parts)
+{
+  // Have to fix
+  double energy = 0.;
+  for (int i = 0; i < num_parts; ++i) {
+    for (int j = 0; j < num_parts; ++j) {
+      if (i == j) continue;
+      double dx = particles[j].pos[0] - particles[i].pos[0];	        //1flop
+      double dy = particles[j].pos[1] - particles[i].pos[1];	        //1flop	
+      double dz = particles[j].pos[2] - particles[i].pos[2];	        //1flop
+
+      double distanceSqr = dx*dx + dy*dy + dz*dz + softeningSquared;	//6flops
+      double distanceInv = 1.0 / sqrt(distanceSqr);			            //1div+1sqrt
+      energy += - G * particles[j].mass * distanceInv * particles[i].mass;
+    }
+  }
+  return energy;
+}
+
+void computeAcc(Particle* buff, int part_num)
+{
+  for (int i = 0; i < part_num; i++) // update acceleration
+    {
+      buff[i].acc[0] = 0.;
+      buff[i].acc[1] = 0.;
+      buff[i].acc[2] = 0.;
+
+      for (int j = 0; j < part_num; j++)
+      {
+        if (i != j)
+        {
+          real_type dx, dy, dz;
+          real_type distanceSqr = 0.0;
+          real_type distanceInv = 0.0;
+          
+          dx = buff[j].pos[0] - buff[i].pos[0];	        //1flop
+          dy = buff[j].pos[1] - buff[i].pos[1];	        //1flop	
+          dz = buff[j].pos[2] - buff[i].pos[2];	        //1flop
+        
+          distanceSqr = dx*dx + dy*dy + dz*dz + softeningSquared;	//6flops
+          distanceInv = 1.0 / sqrt(distanceSqr);			            //1div+1sqrt
+            
+          buff[i].acc[0] += dx * G * buff[j].mass * distanceInv * distanceInv * distanceInv;	//6flops
+          buff[i].acc[1] += dy * G * buff[j].mass * distanceInv * distanceInv * distanceInv;	//6flops
+          buff[i].acc[2] += dz * G * buff[j].mass * distanceInv * distanceInv * distanceInv;	//6flops
+
+        }
+      }
+    }
+}
+
+void update_pos(Particle* dst, const Particle* src_1, const Particle* src_2, double coef, int part_num)
+{
+  for(int i = 0; i < part_num; ++i) {
+    dst[i].pos[0] = src_1[i].pos[0] + src_2[i].vel[0] * coef; // 2 flop
+    dst[i].pos[1] = src_1[i].pos[1] + src_2[i].vel[1] * coef;
+    dst[i].pos[2] = src_1[i].pos[2] + src_2[i].vel[2] * coef;
+
+    dst[i].vel[0] = src_1[i].vel[0] + src_2[i].acc[0] * coef;
+    dst[i].vel[1] = src_1[i].vel[1] + src_2[i].acc[1] * coef;
+    dst[i].vel[2] = src_1[i].vel[2] + src_2[i].acc[2] * coef;
   }
 }
 
 void GSimulation :: start() 
 {
-  real_type energy;
+  real_type energy_k, energy_p;
   real_type dt = get_tstep();
   int n = get_npart();
   int i,j;
@@ -106,14 +194,12 @@ void GSimulation :: start()
   init_vel();
   init_acc();
   init_mass();
+
+  std::cout << "Initial system energy k: " << count_k_energy(particles, n) << " p:" << count_p_energy(particles, n) << " Sum: " << count_k_energy(particles, n) + count_p_energy(particles, n) << std::endl;
   
   print_header();
   
   _totTime = 0.; 
-  
-  const double softeningSquared = 1e-3;
-  // prevents explosion in the case the particles are really close to each other 
-  const double G = 6.67259e-11;
   
   CPUTime time;
   double ts0 = 0;
@@ -125,74 +211,40 @@ void GSimulation :: start()
   
   const double t0 = time.start();
   for (int s=1; s<=get_nsteps(); ++s)
-  {   
+  {
     ts0 += time.start(); 
-    for (i = 0; i < n; i++)// update acceleration
-    {
-      for (j = 0; j < n; j++)
-      {
-	  real_type dx, dy, dz;
-	  real_type distanceSqr = 0.0;
-	  real_type distanceInv = 0.0;
-		  
-	  dx = particles[j].pos[0] - particles[i].pos[0];	//1flop
-	  dy = particles[j].pos[1] - particles[i].pos[1];	//1flop	
-	  dz = particles[j].pos[2] - particles[i].pos[2];	//1flop
-	
-	  distanceSqr = dx*dx + dy*dy + dz*dz + softeningSquared;	//6flops
-	  distanceInv = 1.0 / sqrt(distanceSqr);			//1div+1sqrt
-		  
-	  particles[i].acc[0] += dx * G * particles[j].mass * distanceInv * distanceInv * distanceInv;	//6flops
-	  particles[i].acc[1] += dy * G * particles[j].mass * distanceInv * distanceInv * distanceInv;	//6flops
-	  particles[i].acc[2] += dz * G * particles[j].mass * distanceInv * distanceInv * distanceInv;	//6flops
-
-      }
-    }
-    energy = 0;
-
-    for (i = 0; i < n; ++i)// update position and velocity
-    {
-      particles[i].vel[0] += particles[i].acc[0] * dt;	//2flops
-      particles[i].vel[1] += particles[i].acc[1] * dt;	//2flops
-      particles[i].vel[2] += particles[i].acc[2] * dt;	//2flops
-	 
-      particles[i].pos[0] += particles[i].vel[0] * dt;	//2flops
-      particles[i].pos[1] += particles[i].vel[1] * dt;	//2flops
-      particles[i].pos[2] += particles[i].vel[2] * dt;	//2flops
-
-      particles[i].acc[0] = 0.;
-      particles[i].acc[1] = 0.;
-      particles[i].acc[2] = 0.;
-	
-      energy += particles[i].mass * (
-		particles[i].vel[0]*particles[i].vel[0] + 
-                particles[i].vel[1]*particles[i].vel[1] +
-                particles[i].vel[2]*particles[i].vel[2]); //7flops
-    }
-  
-    _kenergy = 0.5 * energy; 
     
+    // Simple Euler Method
+    computeAcc(particles, n);
+    update_pos(particles, particles, particles, dt, n);
+
+    energy_k = count_k_energy(particles, n);
+    energy_p = count_p_energy(particles, n);
+
+    double impulse[3] = {};
+    count_impulse(particles, n, impulse);
+
+    double impulse_len = sqrt(impulse[0]*impulse[0] + impulse[1]*impulse[1] + impulse[2]*impulse[2]);
+
     ts1 += time.stop();
     if(!(s%get_sfreq()) ) 
     {
       nf += 1;      
       std::cout << " " 
-		<<  std::left << std::setw(8)  << s
-		<<  std::left << std::setprecision(5) << std::setw(8)  << s*get_tstep()
-		<<  std::left << std::setprecision(5) << std::setw(12) << _kenergy
-		<<  std::left << std::setprecision(5) << std::setw(12) << (ts1 - ts0)
-		<<  std::left << std::setprecision(5) << std::setw(12) << gflops*get_sfreq()/(ts1 - ts0)
-		<<  std::endl;
-      if(nf > 2) 
+      <<  std::left << std::setw(8)  << s
+      <<  std::left << std::setprecision(5) << std::setw(8)  << s*get_tstep()
+      <<  std::left << std::setprecision(9) << std::setw(12) << energy_p + energy_k
+      <<  std::left << std::setprecision(9) << std::setw(12) << impulse_len
+      <<  std::left << std::setprecision(5) << std::setw(12) << (ts1 - ts0)
+      <<  std::endl;
+      if(nf > 2)
       {
-	av  += gflops*get_sfreq()/(ts1 - ts0);
-	dev += gflops*get_sfreq()*gflops*get_sfreq()/((ts1-ts0)*(ts1-ts0));
+        av  += gflops*get_sfreq()/(ts1 - ts0);
+        dev += gflops*get_sfreq()*gflops*get_sfreq()/((ts1-ts0)*(ts1-ts0));
       }
-      
       ts0 = 0;
       ts1 = 0;
     }
-  
   } //end of the time step loop
   
   const double t1 = time.stop();
@@ -224,9 +276,9 @@ void GSimulation :: print_header()
   std::cout << " " 
 	    <<  std::left << std::setw(8)  << "s"
 	    <<  std::left << std::setw(8)  << "dt"
-	    <<  std::left << std::setw(12) << "kenergy"
+      <<  std::left << std::setw(12) << "s_energy"
+      <<  std::left << std::setw(12) << "impulse"
 	    <<  std::left << std::setw(12) << "time (s)"
-	    <<  std::left << std::setw(12) << "GFlops"
 	    <<  std::endl;
   std::cout << "------------------------------------------------" << std::endl;
 

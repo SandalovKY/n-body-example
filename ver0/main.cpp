@@ -24,7 +24,7 @@
 
 int main(int argc, char** argv) 
 {
-  int N;			//number of particles
+  int N;			  //number of particles
   int nstep; 		//number ot integration steps
   
   GSimulation sim;
@@ -32,7 +32,7 @@ int main(int argc, char** argv)
   if(argc>1)
   {
     N=atoi(argv[1]);
-    sim.set_number_of_particles(N);  
+    sim.set_number_of_particles(N);
     if(argc==3) 
     {
       nstep=atoi(argv[2]);
