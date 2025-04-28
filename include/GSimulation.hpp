@@ -8,6 +8,7 @@
 #include <string>
 #include <sstream>
 #include <stdlib.h>
+#include <functional>
 
 #include <omp.h>
 
@@ -19,14 +20,22 @@ public:
   GSimulation();
   ~GSimulation();
 
-  void init();
+  // void init();
   void set_number_of_particles(int N);
   void set_number_of_steps(int N);
-  void start();
+  void start(std::function<void(void)> cb);
+
+  Particle* get_parts() { return particles; }
+  size_t get_part_num() { return _npart; }
+  real_type get_area_lim() { return _area_lim; }
+  void have_to_drop() { _drop = true; }
 
 private:
   Particle *particles;
 
+  bool _drop;
+
+  real_type _area_lim;
   int _npart;         // number of particles
   int _nsteps;        // number of integration steps
   real_type _tstep;   // time step of the simulation
@@ -34,10 +43,10 @@ private:
 
   real_type _energy;  // energy of the system
   real_type _impulse; // impulse of the system
+  real_type _impulse_ndim[3];
 
   void init_pos();
   void init_vel();
-  void init_acc();
   void init_mass();
 
   inline void set_npart(const int &N) { _npart = N; }
@@ -51,6 +60,12 @@ private:
 
   inline void init_tstep() { _tstep = _simtime / _nsteps; };
   inline real_type get_tstep() { return _tstep; };
+
+  real_type compute_impulse();
+  real_type compute_k_energy();
+  real_type compute_p_energy();
+  void computeAcc(Particle *y, Particle *f);
+  void update_pos(Particle *dst, const Particle *src_1, const Particle *src_2, double coef);
 
   void print_header();
 };

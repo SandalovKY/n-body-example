@@ -1,13 +1,9 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.21.0)
 
-set(CMAKE_CXX_COMPILER "icx.exe")
-set(CMAKE_C_COMPILER "icx.exe")
+project(nbody)
 
-set(CMAKE_CXX_FLAGS "-Qopt-report:max")
-
-project(Lab1)
-
-add_subdirectory(ver0)
+add_subdirectory(src)
+add_subdirectory(gui)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)

@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "GSimulation.hpp"
+#include <functional>
 
 int main(int argc, char **argv)
 {
@@ -12,11 +13,10 @@ int main(int argc, char **argv)
     GSimulation sim;
     N = atoi(argv[1]);
     sim.set_number_of_particles(N);
-
     nstep = atoi(argv[2]);
     sim.set_number_of_steps(nstep);
 
-    sim.start();
+    sim.start(std::function<void(void)>{});
   }
   else
   {
