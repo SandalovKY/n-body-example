@@ -1,0 +1,13 @@
+[
+    {
+        "name": "DPC++",
+        "environmentSetupScript": "D:\\Program Files\\oneAPI\\setvars.bat",
+        "preferredGenerator": {
+            "name": "Ninja"
+        },
+        "compilers": {
+            "C": "icx",
+            "CXX": "icx"
+        }
+    }
+]
