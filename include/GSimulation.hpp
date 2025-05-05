@@ -20,9 +20,9 @@ public:
   GSimulation();
   ~GSimulation();
 
-  // void init();
   void set_number_of_particles(int N);
-  void set_number_of_steps(int N);
+  void set_sim_time(real_type N);
+  void set_area_size(real_type N);
   void start(std::function<void(void)> cb);
 
   Particle* get_parts() { return particles; }
@@ -55,10 +55,9 @@ private:
   inline void set_simtime(const real_type &time) { _simtime = time; }
   inline real_type get_simtime() const { return _simtime; }
 
-  inline void set_nsteps(const int &n) { _nsteps = n; }
   inline int get_nsteps() const { return _nsteps; }
 
-  inline void init_tstep() { _tstep = _simtime / _nsteps; };
+  inline void init_nsteps() { _nsteps = _simtime / _tstep; };
   inline real_type get_tstep() { return _tstep; };
 
   real_type compute_impulse();

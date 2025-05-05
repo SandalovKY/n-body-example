@@ -7,10 +7,10 @@ GSimulation::GSimulation()
   std::cout << "===============================" << std::endl;
   std::cout << " Initialize Gravity Simulation" << std::endl;
   set_npart(10000);
-  set_nsteps(10);
   set_simtime(1);
   _impulse_ndim[0] = _impulse_ndim[1] = _impulse_ndim[2] = 0;
   _drop = false;
+  _tstep = 0.1;
   _area_lim = 100;
   particles = new Particle[get_npart()];
 }
@@ -24,16 +24,22 @@ void GSimulation::set_number_of_particles(int N)
   set_npart(N);
 }
 
-void GSimulation::set_number_of_steps(int N)
+void GSimulation::set_sim_time(real_type N)
 {
-  set_nsteps(N);
+  _simtime = N;
+}
+
+void GSimulation::set_area_size(real_type N)
+{
+  _area_lim = N;
 }
 
 void GSimulation::init_pos()
 {
   std::random_device rd;
   std::mt19937 gen(42);
-  std::uniform_real_distribution<real_type> unif_d(0, _area_lim);
+  real_type l = 0, r = _area_lim;
+  std::uniform_real_distribution<real_type> unif_d(l, r);
 
   for (int i = 0; i < get_npart(); ++i)
   {
@@ -41,6 +47,11 @@ void GSimulation::init_pos()
     particles[i].pos[1] = unif_d(gen);
     particles[i].pos[2] = unif_d(gen);
   }
+
+  particles[0].pos[0] = particles[0].pos[1] = particles[0].pos[2] = (l + r) / 2;
+  particles[1].pos[0] = particles[1].pos[2] = (l + r) / 3;
+  particles[1].pos[1] = r - (l + r) / 3;
+  particles[2].pos[0] = particles[2].pos[1] = particles[2].pos[2] = (l + r) / 5;
 }
 
 void GSimulation::init_vel()
@@ -55,6 +66,10 @@ void GSimulation::init_vel()
     particles[i].vel[1] = unif_d(gen) * 1e-9;
     particles[i].vel[2] = unif_d(gen) * 1e-9;
   }
+
+  particles[0].vel[0] = particles[0].vel[1] = particles[0].vel[2] = 0;
+  particles[1].vel[0] = particles[1].vel[1] = particles[1].vel[2] = 0;
+  particles[2].vel[0] = particles[2].vel[1] = particles[2].vel[2] = 0;
 }
 
 void GSimulation::init_mass()
@@ -63,19 +78,25 @@ void GSimulation::init_mass()
   std::random_device rd;
   std::mt19937 gen(42);
   std::uniform_real_distribution<real_type> unif_d(0.0, 1.0);
+  real_type mass_sum = 0;
 
   for (int i = 0; i < get_npart(); ++i)
   {
     particles[i].mass = n * unif_d(gen);
+    mass_sum += particles[i].mass;
   }
+
+  particles[0].mass = mass_sum;
+  particles[1].mass = mass_sum;
+  particles[2].mass = mass_sum;
 }
 
 // prevents explosion in the case the particles are really close to each other
 static constexpr double softeningSquared = 1e-3;
 static constexpr double G = 6.67259e-11;
 
-template <typename type>
-void sum_with_correction(type &sum, type &value_to_add, type &correction)
+template <typename type, typename added_type>
+void sum_with_correction(type &sum, const added_type &value_to_add, type &correction)
 {
   type corrected = value_to_add - correction;
   type new_sum = sum + corrected;
@@ -137,11 +158,13 @@ real_type GSimulation::compute_p_energy()
 
 void GSimulation::computeAcc(Particle *y, Particle *f)
 {
-  for (int i = 0; i < _npart; i++) // update acceleration
+  for (int i = 0; i < _npart; i++)
   {
     f[i].vel[0] = 0.;
     f[i].vel[1] = 0.;
     f[i].vel[2] = 0.;
+
+    real_type corr[3] = {0, 0, 0};
 
     for (int j = 0; j < _npart; j++)
     {
@@ -158,9 +181,13 @@ void GSimulation::computeAcc(Particle *y, Particle *f)
         distanceSqr = std::pow(dx, 2) + std::pow(dy, 2) + std::pow(dz, 2) + softeningSquared;
         distanceInv = 1.0 / sqrt(distanceSqr);
 
-        f[i].vel[0] -= dx * G * y[j].mass * std::pow(distanceInv, 3);
-        f[i].vel[1] -= dy * G * y[j].mass * std::pow(distanceInv, 3);
-        f[i].vel[2] -= dz * G * y[j].mass * std::pow(distanceInv, 3);
+        sum_with_correction(f[i].vel[0], -dx * G * y[j].mass * distanceInv * distanceInv * distanceInv, corr[0]);
+        sum_with_correction(f[i].vel[1], -dy * G * y[j].mass * distanceInv * distanceInv * distanceInv, corr[1]);
+        sum_with_correction(f[i].vel[2], -dz * G * y[j].mass * distanceInv * distanceInv * distanceInv, corr[2]);
+      
+        // f[i].vel[0] += -dx * G * y[j].mass * distanceInv * distanceInv * distanceInv;
+        // f[i].vel[1] += -dy * G * y[j].mass * distanceInv * distanceInv * distanceInv;
+        // f[i].vel[2] += -dz * G * y[j].mass * distanceInv * distanceInv * distanceInv;
       }
     }
     f[i].pos[0] = y[i].vel[0];
@@ -185,7 +212,7 @@ void GSimulation::update_pos(Particle *dst, const Particle *src_1, const Particl
 
 void GSimulation::start(std::function<void(void)> cb)
 {
-  init_tstep();
+  init_nsteps();
   real_type energy_k, energy_p;
   real_type dt = get_tstep();
 
@@ -212,12 +239,16 @@ void GSimulation::start(std::function<void(void)> cb)
 
   const double t0 = time.start();
   for (int s = 1; s <= get_nsteps(); ++s)
-  {
+  { // start of the time step loop
     ts0 += time.start();
 
     // Simple Euler Method
     computeAcc(particles, tmp_part);
     update_pos(particles, particles, tmp_part, dt);
+    // только эта часть кода (выше) должна измениться при добавлении вашего варианта.
+    // при добавлении своего варианта нужно будет лишь поменять кол-во вызовов функций выше
+    // допускается введение доп. вспомогательных массивов (аналогично tmp_part), то есть
+    // их может быть несколько для разных вариантов.
 
     if (cb) {
       cb();
@@ -264,8 +295,8 @@ void GSimulation ::print_header()
   std::cout << " "
             << std::left << std::setw(8) << "s"
             << std::left << std::setw(8) << "dt"
-            << std::left << std::setw(16) << "s_energy"
-            << std::left << std::setw(16) << "impulse"
+            << std::left << std::setw(16) << "d_energy"
+            << std::left << std::setw(16) << "d_impulse"
             << std::left << std::setw(16) << "time (s)"
             << std::endl;
   std::cout << "------------------------------------------------" << std::endl;

@@ -1,169 +1,188 @@
 #include <windows.h>
-#include <vector>
-#include <cstdlib>
+#include <gl/GL.h>
+#include <gl/GLU.h>
+#include <math.h>
+
 #include "GSimulation.hpp"
 
-const char g_szClassName[] = "MyWindowClass";
+HDC hDC;
+HGLRC hRC;
+HWND hWnd;
+HINSTANCE hInstance;
 
-HWND g_hwnd;
-std::vector<POINT> points;
-
-HANDLE hWorkerThread = NULL; // Дескриптор потока
-bool running = true;  // Флаг для остановки потока
-
-// Структура для передачи данных между потоками
-struct UpdateData {
-    std::vector<POINT> newPoints;
-};
+LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+HANDLE hWorkerThread = NULL;
 
 struct ThreadData {
     int body_num;
-    int iters;
+    int time;
+    real_type area_lim;
 };
 
-std::atomic_bool drop = false;
+void EnableOpenGL(HWND hWnd, HDC* hDC, HGLRC* hRC) {
+    PIXELFORMATDESCRIPTOR pfd = {
+        sizeof(PIXELFORMATDESCRIPTOR), 1,
+        PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
+        PFD_TYPE_RGBA, 24, 0,0,0,0,0,0,
+        0,0,0,0,0,0,0,
+        32, 0, 0,
+        PFD_MAIN_PLANE, 0, 0,0,0
+    };
 
-// Функция, которую выполняет рабочий поток
+    *hDC = GetDC(hWnd);
+    int iFormat = ChoosePixelFormat(*hDC, &pfd);
+    SetPixelFormat(*hDC, iFormat, &pfd);
+    *hRC = wglCreateContext(*hDC);
+    wglMakeCurrent(*hDC, *hRC);
+}
+
+void DisableOpenGL(HWND hWnd, HDC hDC, HGLRC hRC) {
+    wglMakeCurrent(NULL, NULL);
+    wglDeleteContext(hRC);
+    ReleaseDC(hWnd, hDC);
+}
+
+struct Sphere {
+    GLfloat ambient[4];
+    GLfloat diffuse[4];
+    GLfloat specular[4];
+    GLfloat shininess;
+};
+
 DWORD WINAPI WorkerThread(LPVOID lpParam) {
     ThreadData* data = (ThreadData*)lpParam;
-
     GSimulation sim;
     sim.set_number_of_particles(data->body_num);
-    sim.set_number_of_steps(data->iters);
+    sim.set_sim_time(data->time);
+    sim.set_area_size(data->area_lim);
+
+    EnableOpenGL(hWnd, &hDC, &hRC);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluPerspective(90.0, 600.0 / 600.0, 1.0, 1000.0);
+    glMatrixMode(GL_MODELVIEW);
+    glViewport(0, 0, 600, 600);
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+
+    GLfloat light_pos[] = { 0.0f, 5.0f, 5.0f, 1.0f };
+    GLfloat light_amb[] = { 0.2f, 0.2f, 0.2f, 1.0f };
+    GLfloat light_dif[] = { 0.9f, 0.9f, 0.9f, 1.0f };
+    GLfloat light_spe[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
+    glLightfv(GL_LIGHT0, GL_AMBIENT,  light_amb);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE,  light_dif);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light_spe);
+
+    Sphere spheres[3] = {
+        { {0.2f, 0.1f, 0.0f, 1.0f}, {1.0f, 0.5f, 0.2f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, 30.0f },
+        { {0.0f, 0.2f, 0.2f, 1.0f}, {0.2f, 1.0f, 1.0f, 1.0f}, {0.8f, 0.8f, 0.8f, 1.0f}, 60.0f },
+        { {0.1f, 0.0f, 0.2f, 1.0f}, {0.7f, 0.2f, 1.0f, 1.0f}, {1.0f, 0.6f, 1.0f, 1.0f}, 90.0f }
+    };
+
     sim.start([&]{
-        if (drop) {
-            sim.have_to_drop();
-        } else {
-            std::vector<POINT> updatedPoints;
             size_t parts_num = sim.get_part_num();
             Particle* parts = sim.get_parts();
             real_type area_lim = sim.get_area_lim();
+
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glLoadIdentity();
+
+            glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
+
+            GLUquadric* quad = gluNewQuadric();
+
             for(size_t i = 0; i < parts_num; ++i) {
                 if (parts[i].pos[0] < area_lim && parts[i].pos[1] < area_lim) {
-                        updatedPoints.push_back({(int)((parts[i].pos[0] / area_lim) * 600), (int)((parts[i].pos[1] / area_lim) * 600)});
-                        // updatedPoints.push_back({(200), (200)});
+                        glPushMatrix();
+                        glTranslatef(((parts[i].pos[0] / area_lim) - 0.5) * 10, ((parts[i].pos[1] / area_lim) - 0.5) * 10, ((parts[i].pos[2] / area_lim) - 0.5 * 10));
+                        glMaterialfv(GL_FRONT, GL_AMBIENT,   spheres[i % 3].ambient);
+                        glMaterialfv(GL_FRONT, GL_DIFFUSE,   spheres[i % 3].diffuse);
+                        glMaterialfv(GL_FRONT, GL_SPECULAR,  spheres[i % 3].specular);
+                        glMaterialf (GL_FRONT, GL_SHININESS, spheres[i % 3].shininess);
+
+                        gluSphere(quad, 0.005 * parts[i].mass, 40, 40);
+                        glPopMatrix();
+
                     }
             }
-            UpdateData* updateData = new UpdateData{updatedPoints};
-            PostMessage(g_hwnd, WM_USER + 1, (WPARAM)updateData, 0);
-            Sleep(10);
-        }
+            gluDeleteQuadric(quad);
+            SwapBuffers(hDC);
     });
+
+    DisableOpenGL(hWnd, hDC, hRC);
     return 0;
 }
 
-// Обработчик оконных сообщений
-LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    switch(msg) {
-        case WM_PAINT: {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hwnd, &ps);
+int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
+    hInstance = hInst;
 
-            // Очищаем окно (рисуем фон белым цветом)
-            FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW+1));
+    WNDCLASS wc = { 0 };
+    wc.style = CS_OWNDC;
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = "GLSphereClass";
+    RegisterClass(&wc);
+    hWnd = CreateWindow("GLSphereClass", "Multiple Unique Spheres",
+    WS_OVERLAPPEDWINDOW, 100, 100, 600, 600,
+    NULL, NULL, hInstance, NULL);
 
-            // Отрисовываем точки
-            for (const auto& pt : points) {
-                Rectangle(hdc, pt.x - 2, pt.y - 2, pt.x + 2, pt.y + 2);
-            }
+    ShowWindow(hWnd, SW_SHOW);
 
-            EndPaint(hwnd, &ps);
-        }
-        break;
-
-        case WM_DESTROY:
-            drop = true;
-            running = false; // Останавливаем рабочий поток
-            WaitForSingleObject(hWorkerThread, INFINITE); // Ждем завершения потока
-            CloseHandle(hWorkerThread); // Закрываем дескриптор потока
-            PostQuitMessage(0);
-        break;
-
-        case WM_USER + 1: {
-            // Обработка данных из рабочего потока
-            UpdateData* updateData = (UpdateData*)wParam;
-            points = updateData->newPoints;
-            delete updateData; // Освобождаем память
-            InvalidateRect(hwnd, NULL, FALSE); // Перерисовываем окно
-        }
-        break;
-
-        default:
-            return DefWindowProc(hwnd, msg, wParam, lParam);
-    }
-    return 0;
-}
-
-// Точка входа
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    WNDCLASSEX wc;
-    MSG Msg;
-
-    wc.cbSize        = sizeof(WNDCLASSEX);
-    wc.style         = 0;
-    wc.lpfnWndProc   = WndProc;
-    wc.cbClsExtra    = 0;
-    wc.cbWndExtra    = 0;
-    wc.hInstance     = hInstance;
-    wc.hIcon         = LoadIcon(NULL, IDI_APPLICATION);
-    wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW+1);
-    wc.lpszMenuName  = NULL;
-    wc.lpszClassName = g_szClassName;
-    wc.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
-
-    if(!RegisterClassEx(&wc)) {
-        MessageBox(NULL, "Window Registration Failed!", "Error!", MB_ICONEXCLAMATION | MB_OK);
-        return 0;
-    }
-
-    g_hwnd = CreateWindowEx(
-        WS_EX_CLIENTEDGE,
-        g_szClassName,
-        "Moving Points in Parallel",
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 600, 600,
-        NULL, NULL, hInstance, NULL);
-
-    if(g_hwnd == NULL) {
-        MessageBox(NULL, "Window Creation Failed!", "Error!", MB_ICONEXCLAMATION | MB_OK);
-        return 0;
-    }
-
-    ShowWindow(g_hwnd, nCmdShow);
-    UpdateWindow(g_hwnd);
+    MSG msg;
+    BOOL bQuit = FALSE;
+    float t = 0.0f;
 
     int argc;
     wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    
+
     if (argv == NULL) {
         std::cerr << "Error parsing command line" << std::endl;
         return 1;
     }
 
-    // Инициализация точек
     int pointCount = 1000;
-    int iters = 10;
+    int time = 10;
+    real_type area = 0.1;
     wchar_t* endPtr;
-    if (argc != 3) {
-        std::cout << "Use: n_body_simulation.exe PARTICLES_NUM STEPS_NUM\n";
+    if (argc != 4) {
+        std::cout << "Use: n_body_simulation.exe PARTICLES_NUM SIM_TIME AREA_LIM\n";
         return 0;
     }
     pointCount = std::wcstol(argv[1], &endPtr, 10);
-    iters = std::wcstol(argv[2], &endPtr, 10);
+    time = std::wcstol(argv[2], &endPtr, 10);
+    area = std::wcstod(argv[3], &endPtr);
 
-    ThreadData data{pointCount, iters};
 
-    // Запускаем рабочий поток
+    ThreadData data{pointCount, time, area};
+
     hWorkerThread = CreateThread(NULL, 0, WorkerThread, &data, 0, NULL);
     if (hWorkerThread == NULL) {
         MessageBox(NULL, "Failed to create worker thread", "Error!", MB_ICONEXCLAMATION | MB_OK);
         return 0;
     }
 
-    while(GetMessage(&Msg, NULL, 0, 0) > 0) {
-        TranslateMessage(&Msg);
-        DispatchMessage(&Msg);
+    while(GetMessage(&msg, NULL, 0, 0) > 0) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
     }
-    return Msg.wParam;
+
+
+    DestroyWindow(hWnd);
+    return msg.wParam;
+}
+
+LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+switch (message) {
+case WM_CLOSE:
+    PostQuitMessage(0);
+    return 0;
+case WM_DESTROY:
+    return 0;
+default:
+    return DefWindowProc(hWnd, message, wParam, lParam);
+}
 }
