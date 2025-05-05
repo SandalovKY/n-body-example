@@ -185,9 +185,6 @@ void GSimulation::computeAcc(Particle *y, Particle *f)
         sum_with_correction(f[i].vel[1], -dy * G * y[j].mass * distanceInv * distanceInv * distanceInv, corr[1]);
         sum_with_correction(f[i].vel[2], -dz * G * y[j].mass * distanceInv * distanceInv * distanceInv, corr[2]);
       
-        // f[i].vel[0] += -dx * G * y[j].mass * distanceInv * distanceInv * distanceInv;
-        // f[i].vel[1] += -dy * G * y[j].mass * distanceInv * distanceInv * distanceInv;
-        // f[i].vel[2] += -dz * G * y[j].mass * distanceInv * distanceInv * distanceInv;
       }
     }
     f[i].pos[0] = y[i].vel[0];
