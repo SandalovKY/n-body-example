@@ -156,7 +156,7 @@ real_type GSimulation::compute_p_energy()
   return p_energy / 2;
 }
 
-void GSimulation::computeAcc(Particle *y, Particle *f)
+void GSimulation::compute_f(Particle *y, Particle *f)
 {
   for (int i = 0; i < _npart; i++)
   {
@@ -193,17 +193,17 @@ void GSimulation::computeAcc(Particle *y, Particle *f)
   }
 }
 
-void GSimulation::update_pos(Particle *dst, const Particle *src_1, const Particle *src_2, double coef)
+void GSimulation::update_system(Particle *dst, const Particle *src, const Particle *f, double dt)
 {
   for (int i = 0; i < _npart; ++i)
   {
-    dst[i].pos[0] = src_1[i].pos[0] + src_2[i].pos[0] * coef;
-    dst[i].pos[1] = src_1[i].pos[1] + src_2[i].pos[1] * coef;
-    dst[i].pos[2] = src_1[i].pos[2] + src_2[i].pos[2] * coef;
+    dst[i].pos[0] = src[i].pos[0] + f[i].pos[0] * dt;
+    dst[i].pos[1] = src[i].pos[1] + f[i].pos[1] * dt;
+    dst[i].pos[2] = src[i].pos[2] + f[i].pos[2] * dt;
 
-    dst[i].vel[0] = src_1[i].vel[0] + src_2[i].vel[0] * coef;
-    dst[i].vel[1] = src_1[i].vel[1] + src_2[i].vel[1] * coef;
-    dst[i].vel[2] = src_1[i].vel[2] + src_2[i].vel[2] * coef;
+    dst[i].vel[0] = src[i].vel[0] + f[i].vel[0] * dt;
+    dst[i].vel[1] = src[i].vel[1] + f[i].vel[1] * dt;
+    dst[i].vel[2] = src[i].vel[2] + f[i].vel[2] * dt;
   }
 }
 
@@ -213,7 +213,7 @@ void GSimulation::start(std::function<void(void)> cb)
   real_type energy_k, energy_p;
   real_type dt = get_tstep();
 
-  Particle* tmp_part = new Particle[get_npart()];
+  Particle* f = new Particle[get_npart()];
 
   init_pos();
   init_vel();
@@ -240,8 +240,8 @@ void GSimulation::start(std::function<void(void)> cb)
     ts0 += time.start();
 
     // Simple Euler Method
-    computeAcc(particles, tmp_part);
-    update_pos(particles, particles, tmp_part, dt);
+    compute_f(particles, f);
+    update_system(particles, particles, f, dt);
     // только эта часть кода (выше) должна измениться при добавлении вашего варианта.
     // при добавлении своего варианта нужно будет лишь поменять кол-во вызовов функций выше
     // допускается введение доп. вспомогательных массивов (аналогично tmp_part), то есть

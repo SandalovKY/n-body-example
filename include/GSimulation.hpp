@@ -63,8 +63,8 @@ private:
   real_type compute_impulse();
   real_type compute_k_energy();
   real_type compute_p_energy();
-  void computeAcc(Particle *y, Particle *f);
-  void update_pos(Particle *dst, const Particle *src_1, const Particle *src_2, double coef);
+  void compute_f(Particle *y, Particle *f);
+  void update_system(Particle *dst, const Particle *src_1, const Particle *f, double dt);
 
   void print_header();
 };
