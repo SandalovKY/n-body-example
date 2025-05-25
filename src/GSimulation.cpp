@@ -47,11 +47,6 @@ void GSimulation::init_pos()
     particles[i].pos[1] = unif_d(gen);
     particles[i].pos[2] = unif_d(gen);
   }
-
-  particles[0].pos[0] = particles[0].pos[1] = particles[0].pos[2] = (l + r) / 2;
-  particles[1].pos[0] = particles[1].pos[2] = (l + r) / 3;
-  particles[1].pos[1] = r - (l + r) / 3;
-  particles[2].pos[0] = particles[2].pos[1] = particles[2].pos[2] = (l + r) / 5;
 }
 
 void GSimulation::init_vel()
@@ -66,10 +61,6 @@ void GSimulation::init_vel()
     particles[i].vel[1] = unif_d(gen) * 1e-9;
     particles[i].vel[2] = unif_d(gen) * 1e-9;
   }
-
-  particles[0].vel[0] = particles[0].vel[1] = particles[0].vel[2] = 0;
-  particles[1].vel[0] = particles[1].vel[1] = particles[1].vel[2] = 0;
-  particles[2].vel[0] = particles[2].vel[1] = particles[2].vel[2] = 0;
 }
 
 void GSimulation::init_mass()
@@ -85,15 +76,11 @@ void GSimulation::init_mass()
     particles[i].mass = n * unif_d(gen);
     mass_sum += particles[i].mass;
   }
-
-  particles[0].mass = mass_sum;
-  particles[1].mass = mass_sum;
-  particles[2].mass = mass_sum;
 }
 
 // prevents explosion in the case the particles are really close to each other
-static constexpr double softeningSquared = 1e-3;
-static constexpr double G = 6.67259e-11;
+static constexpr real_type softeningSquared = 1e-6;
+static constexpr real_type G = 6.67430e-11;
 
 template <typename type, typename added_type>
 void sum_with_correction(type &sum, const added_type &value_to_add, type &correction)
@@ -178,13 +165,12 @@ void GSimulation::compute_f(Particle *y, Particle *f)
         dy = y[i].pos[1] - y[j].pos[1];
         dz = y[i].pos[2] - y[j].pos[2];
 
-        distanceSqr = std::pow(dx, 2) + std::pow(dy, 2) + std::pow(dz, 2) + softeningSquared;
+        distanceSqr = dx * dx + dy * dy + dz * dz + softeningSquared;
         distanceInv = 1.0 / sqrt(distanceSqr);
 
         sum_with_correction(f[i].vel[0], -dx * G * y[j].mass * distanceInv * distanceInv * distanceInv, corr[0]);
         sum_with_correction(f[i].vel[1], -dy * G * y[j].mass * distanceInv * distanceInv * distanceInv, corr[1]);
-        sum_with_correction(f[i].vel[2], -dz * G * y[j].mass * distanceInv * distanceInv * distanceInv, corr[2]);
-      
+        sum_with_correction(f[i].vel[2], -dz * G * y[j].mass * distanceInv * distanceInv * distanceInv, corr[2]);    
       }
     }
     f[i].pos[0] = y[i].vel[0];
@@ -210,14 +196,22 @@ void GSimulation::update_system(Particle *dst, const Particle *src, const Partic
 void GSimulation::start(std::function<void(void)> cb)
 {
   init_nsteps();
-  real_type energy_k, energy_p;
-  real_type dt = get_tstep();
-
-  Particle* f = new Particle[get_npart()];
-
   init_pos();
   init_vel();
   init_mass();
+
+  real_type energy_k, energy_p;
+  real_type dt = get_tstep();
+
+  Particle* f1 = new Particle[get_npart()];
+  // Particle* f2 = new Particle[get_npart()];
+  // Particle* f3 = new Particle[get_npart()];
+  // Particle* f4 = new Particle[get_npart()];
+
+  // Particle* tmp = new Particle[get_npart()];
+  // for (int i = 0; i < get_npart(); ++i) {
+  //   tmp[i].mass = particles[i].mass;
+  // }
 
   energy_k = compute_k_energy();
   energy_p = compute_p_energy();
@@ -240,8 +234,9 @@ void GSimulation::start(std::function<void(void)> cb)
     ts0 += time.start();
 
     // Simple Euler Method
-    compute_f(particles, f);
-    update_system(particles, particles, f, dt);
+    compute_f(particles, f1);
+    update_system(particles, particles, f1, dt);
+
     // только эта часть кода (выше) должна измениться при добавлении вашего варианта.
     // при добавлении своего варианта нужно будет лишь поменять кол-во вызовов функций выше
     // допускается введение доп. вспомогательных массивов (аналогично tmp_part), то есть
